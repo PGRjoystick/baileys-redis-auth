@@ -1,4 +1,4 @@
-import Redis, {RedisOptions, Redis as RedisClient} from 'ioredis';
+import Redis, { RedisOptions, Redis as RedisClient } from 'ioredis';
 import {
   AuthenticationCreds,
   AuthenticationState,
@@ -23,7 +23,7 @@ const createKey = (key: string, prefix: string) => `${key}:${prefix}`;
 export const useRedisAuthStateWithHSet = async (
   redisOptions: RedisOptions,
   prefix: string = 'DB1'
-): Promise<{state: AuthenticationState; saveCreds: () => Promise<void>; redis: RedisClient}> => {
+): Promise<{ state: AuthenticationState; saveCreds: () => Promise<void>; redis: RedisClient }> => {
   const redis = new Redis(redisOptions);
   redis.on('connect', async () => {
     const redisClientName = `baileys-auth-${prefix}`;
@@ -48,17 +48,16 @@ export const useRedisAuthStateWithHSet = async (
         get: async (type, ids) => {
           const hashKey = createKey('authState', prefix);
           const fieldsArray = ids.map((id) => `${type}-${id}`);
-          const rawValues = await redis.hmget(hashKey, fieldsArray);
-          const data: {[_: string]: SignalDataTypeMap[typeof type]} = {};
+          // ioredis hmget expects separate fields, spread the array
+          const rawValues = await redis.hmget(hashKey, ...fieldsArray);
+          const data: { [_: string]: SignalDataTypeMap[typeof type] } = {};
 
           ids.forEach((id, index) => {
             const rawValue = rawValues[index];
             if (rawValue) {
               const value = JSON.parse(rawValue, BufferJSON.reviver);
-              data[id] =
-                type === 'app-state-sync-key' && value
-                  ? proto.Message.AppStateSyncKeyData.fromObject(value)
-                  : value;
+              // In Baileys v7 the helper `fromObject` may not exist; return raw value instead.
+              data[id] = value as SignalDataTypeMap[typeof type];
             }
           });
           return data;
@@ -91,7 +90,7 @@ export const useRedisAuthStateWithHSet = async (
   };
 };
 
-export const deleteHSetKeys = async ({redis, key}: IDeleteHSetKeyOptions): Promise<void> => {
+export const deleteHSetKeys = async ({ redis, key }: IDeleteHSetKeyOptions): Promise<void> => {
   try {
     console.log('removing authState keys', key);
     await redis.del(createKey('authState', key));
@@ -103,7 +102,7 @@ export const deleteHSetKeys = async ({redis, key}: IDeleteHSetKeyOptions): Promi
 export const useRedisAuthState = async (
   redisOptions: RedisOptions,
   prefix: string = 'DB1'
-): Promise<{state: AuthenticationState; saveCreds: () => Promise<void>; redis: RedisClient}> => {
+): Promise<{ state: AuthenticationState; saveCreds: () => Promise<void>; redis: RedisClient }> => {
   const redis = new Redis(redisOptions);
 
   const writeData = async (data: any, key: string): Promise<void> => {
@@ -130,14 +129,11 @@ export const useRedisAuthState = async (
               const rawValue = rawValues[index];
               if (rawValue) {
                 const value = JSON.parse(rawValue, BufferJSON.reviver);
-                acc[id] =
-                  type === 'app-state-sync-key'
-                    ? proto.Message.AppStateSyncKeyData.fromObject(value)
-                    : value;
+                acc[id] = value as SignalDataTypeMap[typeof type];
               }
               return acc;
             },
-            {} as {[_: string]: SignalDataTypeMap[typeof type]}
+            {} as { [_: string]: SignalDataTypeMap[typeof type] }
           );
         },
         set: async (data) => {

@@ -1,4 +1,4 @@
-import {Boom} from '@hapi/boom';
+import { Boom } from '@hapi/boom';
 import NodeCache from 'node-cache';
 import makeWASocket, {
   AnyMessageContent,
@@ -11,10 +11,17 @@ import makeWASocket, {
   WAMessageContent,
   WAMessageKey,
 } from '@whiskeysockets/baileys';
-import makeInMemoryStore from '@whiskeysockets/baileys/lib/Store/makeInMemoryStore';
-import {logger} from '#/Example/logger-pino';
-import {useRedisAuthState, deleteKeysWithPattern} from '#/index';
-import {useRedisAuthStateWithHSet, deleteHSetKeys} from '#/index';
+// makeInMemoryStore path changed across versions; require at runtime if available
+let makeInMemoryStore: any;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  makeInMemoryStore = require('@whiskeysockets/baileys/lib/Store/makeInMemoryStore').default;
+} catch (e) {
+  makeInMemoryStore = undefined;
+}
+import { logger } from '#/Example/logger-pino';
+import { useRedisAuthState, deleteKeysWithPattern } from '#/index';
+import { useRedisAuthStateWithHSet, deleteHSetKeys } from '#/index';
 
 // Ensure logger is of type Logger or undefined
 // const logger = Logger.child({});
@@ -29,7 +36,7 @@ const msgRetryCounterCache = new NodeCache();
 
 // the store maintains the data of the WA connection in memory
 // can be written out to a file & read from it
-const store = useStore ? makeInMemoryStore({logger}) : undefined;
+const store = useStore ? makeInMemoryStore({ logger }) : undefined;
 if (useStore) {
   store?.readFromFile('./baileys_store_multi.json');
   // save every 10s
@@ -48,11 +55,11 @@ const startSock = async () => {
     password: 'd334911fd345f1170b5bfcc8e75ee72df0f114eb',
   };
 
-  const {state, saveCreds, redis} = await useRedisAuthState(redisOptions, 'DB1');
+  const { state, saveCreds, redis } = await useRedisAuthState(redisOptions, 'DB1');
   // const {state, saveCreds, redis} = await useRedisAuthStateWithHSet(redisOptions, 'DB1');
 
   // fetch latest version of WA Web
-  const {version, isLatest} = await fetchLatestBaileysVersion();
+  const { version, isLatest } = await fetchLatestBaileysVersion();
   console.log(`using WA v${version.join('.')}, isLatest: ${isLatest}`);
 
   const waOptions = {
@@ -62,7 +69,7 @@ const startSock = async () => {
     auth: {
       creds: state.creds,
       /** caching makes the store faster to send/recv messages */
-      keys: makeCacheableSignalKeyStore(state.keys, logger),
+      keys: makeCacheableSignalKeyStore(state.keys as any, logger),
     },
     msgRetryCounterCache,
     generateHighQualityLinkPreview: true,
@@ -74,7 +81,7 @@ const startSock = async () => {
     browser: ['BINDUNI v3', 'Desktop', version.join('.')] as [string, string, string],
   };
 
-  const sock = makeWASocket(waOptions);
+  const sock = makeWASocket(waOptions as any);
 
   if (useStore) {
     store?.bind(sock.ev);
@@ -94,7 +101,7 @@ const startSock = async () => {
 
   // Event handler functions defined within startSock to close over variables like sock, saveCreds, redis, etc.
   async function handleConnectionUpdate(update: Partial<import('@whiskeysockets/baileys').ConnectionState>) {
-    const {connection, lastDisconnect, qr} = update;
+    const { connection, lastDisconnect, qr } = update;
     const currentAuthState = state; // Use the state from the outer scope
     const currentRedis = redis; // Use redis from the outer scope
 
@@ -113,7 +120,7 @@ const startSock = async () => {
         // If useRedisAuthState is active (based on which line is commented out above for state, saveCreds, redis initialization)
         // await deleteKeysWithPattern({redis: currentRedis, pattern: 'DB1:*'});
         // If useRedisAuthStateWithHSet is active:
-        await deleteHSetKeys({redis: currentRedis, key: 'DB1'});
+        await deleteHSetKeys({ redis: currentRedis, key: 'DB1' });
         console.log('Cleaned up auth state keys.');
       }
     } else if (connection === 'open') {
@@ -134,15 +141,15 @@ const startSock = async () => {
     // console.log('Credentials updated and saved.');
   }
 
-  async function handleMessagingHistorySet(history: import('@whiskeysockets/baileys').MessageHistoryBundle) {
-    const {chats, contacts, messages, isLatest} = history;
+  async function handleMessagingHistorySet(history: any) {
+    const { chats, contacts, messages, isLatest } = history;
     console.log(
       `Received ${chats.length} chats, ${contacts.length} contacts, ${messages.length} messages (is latest: ${isLatest}).`
     );
     // History is automatically handled by the store if bound.
   }
 
-  async function handleMessagesUpsert(upsert: import('@whiskeysockets/baileys').BaileysEventMap['messages.upsert']) {
+  async function handleMessagesUpsert(upsert: any) {
     // console.log('Received messages upsert:', JSON.stringify(upsert, undefined, 2));
     if (upsert.type === 'notify' || upsert.type === 'append') {
       for (const msg of upsert.messages) {
@@ -150,14 +157,14 @@ const startSock = async () => {
         if (!msg.key.fromMe && doReplies) {
           console.log('Replying to message from:', msg.key.remoteJid);
           await sock.readMessages([msg.key]);
-          await sendMessageWTyping({text: 'Hello there! This is an automated reply.'}, msg.key.remoteJid!);
+          await sendMessageWTyping({ text: 'Hello there! This is an automated reply.' }, msg.key.remoteJid!);
         }
         // Example: Ping-pong
         const messageText = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
         if (messageText?.toLowerCase() === 'ping') {
           console.log('Received "ping", sending "pong".');
           await sock.readMessages([msg.key]);
-          await sendMessageWTyping({text: 'Pong!'}, msg.key.remoteJid!);
+          await sendMessageWTyping({ text: 'Pong!' }, msg.key.remoteJid!);
           // console.log('Current user info:', sock.user);
           // const groups = await sock.groupFetchAllParticipating();
           // console.log('Participating groups:', JSON.stringify(groups, undefined, 2));
@@ -166,9 +173,9 @@ const startSock = async () => {
     }
   }
 
-  async function handleMessagesUpdate(updates: import('@whiskeysockets/baileys').BaileysEventMap['messages.update']) {
+  async function handleMessagesUpdate(updates: any) {
     // console.log('Messages update event:', JSON.stringify(updates, undefined, 2));
-    for (const {key, update} of updates) {
+    for (const { key, update } of updates) {
       if (update.pollUpdates) {
         const pollCreation = await getMessage(key);
         if (pollCreation) {
@@ -184,7 +191,7 @@ const startSock = async () => {
     }
   }
 
-  async function handleContactsUpdate(contactsUpdate: import('@whiskeysockets/baileys').BaileysEventMap['contacts.update']) {
+  async function handleContactsUpdate(contactsUpdate: any) {
     for (const contact of contactsUpdate) {
       if (typeof contact.imgUrl !== 'undefined') {
         const newUrl =
@@ -196,43 +203,43 @@ const startSock = async () => {
     }
   }
 
-  async function handleChatsUpdate(chatsUpdate: import('@whiskeysockets/baileys').BaileysEventMap['chats.update']) {
+  async function handleChatsUpdate(chatsUpdate: any) {
     // console.log('Chats update event:', chatsUpdate);
   }
 
-  async function handleChatsDelete(deletedChats: import('@whiskeysockets/baileys').BaileysEventMap['chats.delete']) {
+  async function handleChatsDelete(deletedChats: any) {
     console.log('Chats deleted event:', deletedChats);
   }
 
-  async function handleLabelsAssociation(associationInfo: import('@whiskeysockets/baileys').LabelAssociation) {
+  async function handleLabelsAssociation(associationInfo: any) {
     // console.log('Labels association event:', associationInfo);
   }
 
-  async function handleLabelsEdit(labelEditInfo: import('@whiskeysockets/baileys').Label) {
+  async function handleLabelsEdit(labelEditInfo: any) {
     // console.log('Labels edit event:', labelEditInfo);
   }
 
-  async function handleCall(callEvents: import('@whiskeysockets/baileys').Call[]) {
+  async function handleCall(callEvents: any[]) {
     // console.log('Received call event:', callEvents);
     // Here you might want to handle incoming calls, e.g., reject them
     for (const call of callEvents) {
-        if (call.status === 'offer') {
-            // Example: Reject all incoming calls
-            // await sock.rejectCall(call.id, call.from);
-            // console.log(`Rejected call ${call.id} from ${call.from}`);
-        }
+      if (call.status === 'offer') {
+        // Example: Reject all incoming calls
+        // await sock.rejectCall(call.id, call.from);
+        // console.log(`Rejected call ${call.id} from ${call.from}`);
+      }
     }
   }
 
-  async function handleMessageReceiptUpdate(receipts: import('@whiskeysockets/baileys').BaileysEventMap['message-receipt.update']) {
+  async function handleMessageReceiptUpdate(receipts: any) {
     // console.log('Message receipt update event:', receipts);
   }
 
-  async function handleMessagesReaction(reactions: import('@whiskeysockets/baileys').BaileysEventMap['messages.reaction']) {
+  async function handleMessagesReaction(reactions: any) {
     // console.log('Messages reaction event:', reactions);
   }
 
-  async function handlePresenceUpdate(presence: import('@whiskeysockets/baileys').BaileysEventMap['presence.update']) {
+  async function handlePresenceUpdate(presence: any) {
     // console.log('Presence update event:', presence);
   }
 
